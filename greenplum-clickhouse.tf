@@ -5,8 +5,10 @@
 
 # Specify the following settings
 locals {
-  gp_password = "" # Set a password for the Greenplum® admin user
-  ch_password = "" # Set a password for the ClickHouse admin user
+  mgp_password = "" # Set a password for the Greenplum® user
+  mch_db       = "" # Set а name for the ClickHouse database
+  mch_user     = "" # Set а name for the ClickHouse database user
+  mch_password = "" # Set a password for the ClickHouse database user
 }
 
 resource "yandex_vpc_network" "mgp_network" {
@@ -38,7 +40,7 @@ resource "yandex_vpc_subnet" "mch_subnet-a" {
 resource "yandex_vpc_security_group" "mgp_security_group" {
   description = "Security group for Managed Service for Greenplum®"
   network_id  = yandex_vpc_network.mgp_network.id
-  name        = "Managed Greenplum® security group"
+  name        = "mgp_security_group"
 
   ingress {
     description    = "Allow incoming traffic from the Internet"
@@ -60,7 +62,7 @@ resource "yandex_vpc_security_group" "mgp_security_group" {
 resource "yandex_vpc_security_group" "mch_security_group" {
   description = "Security group for Managed Service for ClickHouse"
   network_id  = yandex_vpc_network.mch_network.id
-  name        = "Managed ClickHouse security group"
+  name        = "mch_security_group"
 
   ingress {
     description    = "Allow incoming traffic from the port 8443"
@@ -93,7 +95,7 @@ resource "yandex_mdb_greenplum_cluster" "mgp-cluster" {
   zone               = "ru-central1-a"
   subnet_id          = yandex_vpc_subnet.mgp_subnet-a.id
   assign_public_ip   = true
-  version            = "6.19"
+  version            = "6.25"
   master_host_count  = 2
   segment_host_count = 2
   segment_in_host    = 1
@@ -113,12 +115,12 @@ resource "yandex_mdb_greenplum_cluster" "mgp-cluster" {
   }
 
   user_name     = "user"
-  user_password = local.gp_password
+  user_password = local.mgp_password
 
   security_group_ids = [yandex_vpc_security_group.mgp_security_group.id]
 }
 
-resource "yandex_mdb_clickhouse_cluster" "clickhouse-cluster" {
+resource "yandex_mdb_clickhouse_cluster" "mch-cluster" {
   description        = "Managed Service for ClickHouse cluster"
   name               = "mch-cluster"
   environment        = "PRODUCTION"
@@ -140,15 +142,43 @@ resource "yandex_mdb_clickhouse_cluster" "clickhouse-cluster" {
     assign_public_ip = true # Required for connection from the Internet
   }
 
-  database {
-    name = "db1"
+  lifecycle {
+    ignore_changes = [database, user]
   }
+}
 
-  user {
-    name     = "user"
-    password = local.ch_password
-    permission {
-      database_name = "db1"
+resource "yandex_mdb_clickhouse_database" "mch-db" {
+  cluster_id = yandex_mdb_clickhouse_cluster.mch-cluster.id
+  name       = local.mch_db
+}
+
+resource "yandex_mdb_clickhouse_user" "mch-user" {
+  cluster_id = yandex_mdb_clickhouse_cluster.mch-cluster.id
+  name       = local.mch_user
+  password   = local.mch_password
+  permission {
+    database_name = yandex_mdb_clickhouse_database.mch-db.name
+  }
+  settings {
+  }
+}
+
+resource "yandex_datatransfer_endpoint" "mch-target" {
+  description = "Target endpoint for ClickHouse cluster"
+  name        = "mch-target"
+  settings {
+    clickhouse_target {
+      connection {
+        connection_options {
+          mdb_cluster_id = yandex_mdb_clickhouse_cluster.mch-cluster.id
+          database       = local.mch_db
+          user           = local.mch_user
+          password {
+            raw = local.mch_password
+          }
+        }
+      }
+      cleanup_policy = "CLICKHOUSE_CLEANUP_POLICY_DROP"
     }
   }
 }
