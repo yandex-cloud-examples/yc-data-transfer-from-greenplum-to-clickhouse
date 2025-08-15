@@ -164,7 +164,7 @@ resource "yandex_mdb_clickhouse_user" "mch-user" {
 }
 
 resource "yandex_datatransfer_endpoint" "mch-target" {
-  description = "Target endpoint for ClickHouse cluster"
+  description = "Target endpoint for the Managed Service for ClickHouse cluster"
   name        = "mch-target"
   settings {
     clickhouse_target {
