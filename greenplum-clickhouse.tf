@@ -5,6 +5,7 @@
 
 # Specify the following settings
 locals {
+  gp_version   = "" # Set a Greenplum® version
   mgp_password = "" # Set a password for the Greenplum® user
   mch_db       = "" # Set а name for the ClickHouse database
   mch_user     = "" # Set а name for the ClickHouse database user
@@ -95,7 +96,7 @@ resource "yandex_mdb_greenplum_cluster" "mgp-cluster" {
   zone               = "ru-central1-a"
   subnet_id          = yandex_vpc_subnet.mgp_subnet-a.id
   assign_public_ip   = true
-  version            = "6.25"
+  version            = local.gp_version
   master_host_count  = 2
   segment_host_count = 2
   segment_in_host    = 1
