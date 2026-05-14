@@ -5,6 +5,7 @@
 
 # Specify the following settings
 locals {
+  gp_version   = "" # Set a Greenplum® version
   mgp_password = "" # Set a password for the Greenplum® user
   mch_db       = "" # Set а name for the ClickHouse database
   mch_user     = "" # Set а name for the ClickHouse database user
@@ -95,7 +96,7 @@ resource "yandex_mdb_greenplum_cluster" "mgp-cluster" {
   zone               = "ru-central1-a"
   subnet_id          = yandex_vpc_subnet.mgp_subnet-a.id
   assign_public_ip   = true
-  version            = "6.25"
+  version            = local.gp_version
   master_host_count  = 2
   segment_host_count = 2
   segment_in_host    = 1
@@ -120,40 +121,47 @@ resource "yandex_mdb_greenplum_cluster" "mgp-cluster" {
   security_group_ids = [yandex_vpc_security_group.mgp_security_group.id]
 }
 
-resource "yandex_mdb_clickhouse_cluster" "mch-cluster" {
+resource "yandex_mdb_clickhouse_cluster_v2" "mch-cluster" {
   description        = "Managed Service for ClickHouse cluster"
   name               = "mch-cluster"
   environment        = "PRODUCTION"
   network_id         = yandex_vpc_network.mch_network.id
   security_group_ids = [yandex_vpc_security_group.mch_security_group.id]
 
-  clickhouse {
-    resources {
+  clickhouse = {
+    resources = {
       resource_preset_id = "s2.micro"
       disk_type_id       = "network-ssd"
       disk_size          = 10 # GB
     }
   }
 
-  host {
-    type             = "CLICKHOUSE"
-    zone             = "ru-central1-a"
-    subnet_id        = yandex_vpc_subnet.mch_subnet-a.id
-    assign_public_ip = true # Required for connection from the Internet
+  hosts = {
+    "ch-host1" = {
+      type             = "CLICKHOUSE"
+      zone             = "ru-central1-a"
+      subnet_id        = yandex_vpc_subnet.mch_subnet-a.id
+      assign_public_ip = true # Required for connection from the Internet
+      shard_name       = "shard1"
+    }
   }
 
-  lifecycle {
-    ignore_changes = [database, user]
+  shards = {
+    "shard1" = {}
+  }
+
+  maintenance_window {
+    type = "ANYTIME"
   }
 }
 
 resource "yandex_mdb_clickhouse_database" "mch-db" {
-  cluster_id = yandex_mdb_clickhouse_cluster.mch-cluster.id
+  cluster_id = yandex_mdb_clickhouse_cluster_v2.mch-cluster.id
   name       = local.mch_db
 }
 
 resource "yandex_mdb_clickhouse_user" "mch-user" {
-  cluster_id = yandex_mdb_clickhouse_cluster.mch-cluster.id
+  cluster_id = yandex_mdb_clickhouse_cluster_v2.mch-cluster.id
   name       = local.mch_user
   password   = local.mch_password
   permission {
@@ -170,7 +178,7 @@ resource "yandex_datatransfer_endpoint" "mch-target" {
     clickhouse_target {
       connection {
         connection_options {
-          mdb_cluster_id = yandex_mdb_clickhouse_cluster.mch-cluster.id
+          mdb_cluster_id = yandex_mdb_clickhouse_cluster_v2.mch-cluster.id
           database       = local.mch_db
           user           = local.mch_user
           password {
